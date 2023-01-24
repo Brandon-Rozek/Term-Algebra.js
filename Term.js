@@ -20,6 +20,9 @@ class Variable {
     toString() {
         return this.name;
     }
+    isEqual(v) {
+        return (v instanceof Variable && v.name === this.name);
+    }
 }
 
 class Constant {
@@ -32,28 +35,51 @@ class Constant {
     toString() {
         return this.name;
     }
+    isEqual(c) {
+        return (c instanceof Constant && c.name === this.name);
+    }
 }
 
-function Func(name, arity) {
-    if (typeof name !== "string") {
-        throw Error("Function name must be a string");
+class Func extends Function {
+    constructor(name, arity) {
+        super('...args', 'return this._bound._call(...args)')
+
+        if (typeof name !== "string") {
+            throw Error("Function name must be a string");
+        }
+        if (!Number.isInteger(arity)) {
+            throw Error("Variable arity must be an integer");
+        }
+
+        this._bound = this.bind(this)
+        this._bound.symbol_name = name;
+        this._bound.arity = arity;
+        return this._bound
     }
-    if (!Number.isInteger(arity)) {
-        throw Error("Variable arity must be an integer");
+
+    _call(...args) {
+        if (args.length !== this.arity) {
+            throw Error("Wrong number of arguments, exected " + this.arity + " received " + args.length);
+        }
+        return new FuncTerm(new Func(this.symbol_name, this.arity), args);
     }
-    let fn = (...args) => new FuncTerm(new Func(name, arity), args);
-    fn.name = name;
-    fn.arity = arity;
-    fn.prototype = {};
-    fn.prototype.toString = () => name;
-    fn.constructor = Func
-    return fn;
+
+    toString() {
+        return this.symbol_name;
+    }
+    isEqual(f) {
+        return (f instanceof Func && f.symbol_name === this.symbol_name && f.arity == this.arity);
+    }
 }
 
 function isTerm(t) {
     return (t instanceof Variable) ||
         (t instanceof Constant) ||
         (t instanceof FuncTerm);
+}
+
+function zip(a ,b) {
+    return a.map((v, i) => [v, b[i]]);
 }
 
 class FuncTerm {
@@ -64,14 +90,17 @@ class FuncTerm {
         if (!Array.isArray(args) || !args.every(t => isTerm(t))) {
             throw Error("args must be an array of terms")
         }
-        this.function = func;
-        this.arguments = args;
+        this.func = func;
+        this.args = args;
     }
     toString() {
-        if (this.arity === 0) {
-            return this.function.toString();
+        if (this.func.arity === 0) {
+            return this.func.toString();
         }
-        return this.function.toString() + "(" + this.arguments.join(",") + ")";
+        return this.func.toString() + "(" + this.args.join(",") + ")";
+    }
+    isEqual(t) {
+        return (t instanceof FuncTerm && zip(this.args, t.args).every(x => x[0].isEqual(x[1])));
     }
 }
 
@@ -87,7 +116,10 @@ function cloneTerm(t) {
     }
     if (t instanceof FuncTerm) {
         const args = t.args.map(ti => cloneTerm(ti));
-        return new FuncTerm(t.name, args);
+        return new FuncTerm(
+            new Func(t.func.symbol_name, t.func.arity),
+            args
+        );
     }
 }
 
@@ -113,11 +145,11 @@ class Equation {
 
 class Substitution {
     constructor() {
-        this.subs = {};
+        this.subs = [];
     }
     toString() {
-        const subStrings = Object.entries(this.subs).map(v, t => v.toString() + " -> " + t.toString());
-        return "{" + subStrings.join(",") + "}";
+        const subStrings = this.subs.map(vt => vt[0].toString() + " -> " + vt[1].toString());
+        return "{" + subStrings.join(", ") + "}";
     }
 
 }
@@ -129,14 +161,25 @@ Substitution.prototype.add = function(variable, term) {
     if (!isTerm(term)) {
         throw Error("Second argument must be a term");
     }
-    tihs.subs[variable] = term;
+    if (this.subs.some(vt => vt[0].isEqual(variable))) {
+        throw Error("Variable already exists in substitution")
+    }
+    this.subs.push([variable, term])
 }
 
 Substitution.prototype.remove = function(variable) {
     if (!(variable instanceof Variable)) {
         throw Error("Argument must be of type Variable");
     }
-    delete this.subs[variable];
+    let indexToRemove = -1;
+    for (let i = 0; i < this.subs.length; i++) {
+        if (this.subs[i][0].isEqual(variable)) {
+            indexToRemove = i;
+        }
+    }
+    if (indexToRemove !== -1) {
+        this.subs.splice(indexToRemove, 1);
+    }
 }
 
 Substitution.prototype.apply = function(t) {
@@ -144,17 +187,24 @@ Substitution.prototype.apply = function(t) {
         throw Error("Argument must be of type Term");
     }
 
-    if (Object.keys(this.subs).length == 0) {
+    if (this.subs.length === 0) {
         return cloneTerm(t);   
     }
 
     if (t instanceof FuncTerm) {
         const args = t.args.map(ti => this.apply(ti));
-        return new FuncTerm(t.name, args);
+        return new FuncTerm(
+            new Func(t.func.symbol_name, t.func.arity),
+            args
+        );
     }
 
     if (t instanceof Variable) {
-        return cloneTerm(this.subs[t]);
+        for (const [v, tNew] of this.subs) {
+            if (v.isEqual(t)) {
+                return cloneTerm(tNew);
+            }
+        }
     }
 
     return cloneTerm(t);
@@ -169,51 +219,58 @@ function cloneSubstitution(sub) {
 
     let newSubstitution = new Substitution();
 
-    for (const [v, t] of Object.entries(sub)) {
+    for (const [v, t] of sub.subs) {
         newSubstitution.add(cloneTerm(v), cloneTerm(t));
     }
 
     return newSubstitution;
 }
 
-Substitution.prototype.compose = function(sub) {
+Substitution.prototype.contains = function(variable) {
+    if (!(variable instanceof Variable)) {
+        throw Error("Substitution contains only considers the variables")
+    }
+    return this.subs.some(vt => vt[0].isEqual(variable))
+}
+
+Substitution.prototype.compose = function(sigma) {
     // Source: Franz Baader and Wayne Snyder.
     // Unification Theory. Handbook of Automated Reasoning, 2001
-    if (!(sub instanceof Substitution)) {
+    if (!(sigma instanceof Substitution)) {
         throw Error("Argument must be of type substitution");
     }
 
-    if (Object.keys(this.subs).length == 0) {
-        return cloneSubstitution(sub);
+    if (this.subs.length == 0) {
+        return cloneSubstitution(sigma);
     }
 
     let newSubstitution = new Substitution();
 
     // Apply substitution to every term within our current one
-    for (const [v, t] of Object.entries(this.sub)) {
+    for (const [v, t] of this.subs) {
         newSubstitution.add(
             cloneTerm(v),
-            sub.apply(t)
+            sigma.apply(t)
         );
     }
 
     // Remove any binding x->t where x in Domain(this)
-    let newSubArg = cloneSubstitution(sub);
-    for (const v of Object.keys(newSubstitution.subs)) {
-        if (Object.keys(newSubArg.subs).contains(v)) {
-            newSubArg.remove(v);
+    let newSigma = cloneSubstitution(sigma);
+    for (const [v, t] of newSubstitution.subs) {
+        if (newSigma.contains(v)) {
+            newSigma.remove(v);
         }
     }
 
     // Remove trivial bindings
-    for (const [v, t] of Object.entries(this.sub)) {
-        if (v == t) {
+    for (const [v, t] of newSubstitution.subs) {
+        if (v.isEqual(t)) {
             newSubstitution.remove(v);
         }
     }
 
     // Union the two subsitutions
-    for (const [v, t] of Object.entries(newSubArg)) {
+    for (const [v, t] of newSigma.subs) {
         newSubstitution.add(v, t);
     }
 
