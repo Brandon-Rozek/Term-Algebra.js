@@ -34,23 +34,20 @@ class Constant {
     }
 }
 
-class Func {
-    constructor(name, arity) {
-        if (typeof name !== "string") {
-            throw Error("Function name must be a string");
-        }
-        if (!Number.isInteger(arity)) {
-            throw Error("Variable arity must be an integer");
-        }
-        this.name = name;
-        this.arity = arity;
+function Func(name, arity) {
+    if (typeof name !== "string") {
+        throw Error("Function name must be a string");
     }
-    call(...args) {
-        return FuncTerm(Func(this.name), args);
+    if (!Number.isInteger(arity)) {
+        throw Error("Variable arity must be an integer");
     }
-    toString() {
-        return this.name;
-    }
+    let fn = (...args) => new FuncTerm(new Func(name, arity), args);
+    fn.name = name;
+    fn.arity = arity;
+    fn.prototype = {};
+    fn.prototype.toString = () => name;
+    fn.constructor = Func
+    return fn;
 }
 
 function isTerm(t) {
@@ -83,14 +80,14 @@ function cloneTerm(t) {
         throw Error("Argument must be of type Term");
     }
     if (t instanceof Variable) {
-        return Variable(t.name);
+        return new Variable(t.name);
     }
     if (t instanceof Constant) {
-        return Constant(t.name);
+        return new Constant(t.name);
     }
     if (t instanceof FuncTerm) {
         const args = t.args.map(ti => cloneTerm(ti));
-        return FuncTerm(t.name, args);
+        return new FuncTerm(t.name, args);
     }
 }
 
@@ -153,7 +150,7 @@ Substitution.prototype.apply = function(t) {
 
     if (t instanceof FuncTerm) {
         const args = t.args.map(ti => this.apply(ti));
-        return FuncTerm(t.name, args);
+        return new FuncTerm(t.name, args);
     }
 
     if (t instanceof Variable) {
@@ -170,7 +167,7 @@ function cloneSubstitution(sub) {
         throw Error("Argument must be of type substitution");
     }
 
-    let newSubstitution = Substitution();
+    let newSubstitution = new Substitution();
 
     for (const [v, t] of Object.entries(sub)) {
         newSubstitution.add(cloneTerm(v), cloneTerm(t));
@@ -190,7 +187,7 @@ Substitution.prototype.compose = function(sub) {
         return cloneSubstitution(sub);
     }
 
-    let newSubstitution = Substitution();
+    let newSubstitution = new Substitution();
 
     // Apply substitution to every term within our current one
     for (const [v, t] of Object.entries(this.sub)) {
@@ -224,5 +221,9 @@ Substitution.prototype.compose = function(sub) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-    module.exports = [Variable, Constant, Func, Substitution, Equation];
+    module.exports.Variable = Variable;
+    module.exports.Constant = Constant;
+    module.exports.Func = Func;
+    module.exports.Substitution = Substitution;
+    module.exports.Equation = Equation;
 }
