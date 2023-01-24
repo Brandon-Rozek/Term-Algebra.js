@@ -4,7 +4,7 @@ Terms and substitions for equational reasoning.
 
 To load it in:
 ```javascript
-const Term = require('Term-Algebra');
+const Term = require('term-algebra');
 ```
 
 From there you can create terms:
@@ -40,6 +40,8 @@ console.log(sigma3.toString());
 
 You can apply a substitution to a term
 ```javascript
-console.log(sigma3.apply(f(x)));
+console.log(
+	sigma3.apply(f(x)).toString()
+);
 // Returns 'f(g(a, c))'
 ```
