@@ -1,0 +1,22 @@
+{
+    "name": "term-algebra",
+    "version": "0.0.1",
+    "description": "Terms and substitutions for equational reasoning.",
+    "keywords": [
+        "reasoning",
+        "algebra"
+    ],
+    "homepage": "https://github.com/Brandon-Rozek/Term-Algebra.js",
+    "bugs": "https://github.com/Brandon-Rozek/Term-Algebra.js/issues", 
+    "license": "MIT",
+    "author": {
+        "name": "Brandon Rozek",
+        "email": "brozek@brandonrozek.com",
+        "url": "https://brandonrozek.com"
+    },
+    "main": "Term.js",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/Brandon-Rozek/Term-Algebra.js"
+    }
+}
